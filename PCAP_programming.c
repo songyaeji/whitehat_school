@@ -44,8 +44,12 @@ void packet_handler(u_char *user_data, const struct pcap_pkthdr *pkthdr, const u
     printf("Source Port: %d\n", ntohs(tcp_header->th_sport));
     printf("Destination Port: %d\n", ntohs(tcp_header->th_dport));
 
-    // 메시지 출력
-    printf("Message: %s\n", data);
+    // 메시지 데이터 출력
+    printf("Message: ");
+    for (int i = 0; i < pkthdr->len - (ETHER_HDR_LEN + (ip_header->ip_hl << 2) + (tcp_header->th_off << 2)); i++) {
+        printf("%c", data[i]);
+    }
+    printf("\n");
 
     printf("\n");
 }
@@ -54,8 +58,8 @@ int main() {
     pcap_t *handle;
     char errbuf[PCAP_ERRBUF_SIZE];
 
-    // 원하는 네트워크 인터페이스에 대한 라이브 pcap 세션 열기
-    handle = pcap_open_live("wlo1", BUFSIZ, 1, 1000, errbuf);
+    // 원하는 네트워크 인터페이스에 대한 라이브 pcap 세션 열기 (인터페이스 이름을 변경하세요)
+    handle = pcap_open_live("enp0s3", BUFSIZ, 1, 1000, errbuf);
     if (handle == NULL) {
         fprintf(stderr, "인터페이스 열기 오류: %s\n", errbuf);
         return 1;
