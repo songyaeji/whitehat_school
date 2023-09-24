@@ -4,12 +4,13 @@
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <netinet/if_ether.h>
+#include <openssl/ssl.h>
 
 void packet_handler(u_char *user_data, const struct pcap_pkthdr *pkthdr, const u_char *packet) {
     struct ether_header *eth_header;
     struct ip *ip_header;
     struct tcphdr *tcp_header;
-    char *data;
+    const u_char *ssl_data;
 
     eth_header = (struct ether_header *)packet;
     if (ntohs(eth_header->ether_type) != ETHERTYPE_IP) {
@@ -24,32 +25,31 @@ void packet_handler(u_char *user_data, const struct pcap_pkthdr *pkthdr, const u
     }
 
     tcp_header = (struct tcphdr *)(packet + ETHER_HDR_LEN + (ip_header->ip_hl << 2));
-    data = (char *)(packet + ETHER_HDR_LEN + (ip_header->ip_hl << 2) + (tcp_header->th_off << 2));
+    ssl_data = packet + ETHER_HDR_LEN + (ip_header->ip_hl << 2) + (tcp_header->th_off << 2);
 
-    // 이더넷 소스 및 대상 MAC 주소 출력
-    printf("Ethernet 소스 MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
-           eth_header->ether_shost[0], eth_header->ether_shost[1],
-           eth_header->ether_shost[2], eth_header->ether_shost[3],
-           eth_header->ether_shost[4], eth_header->ether_shost[5]);
-    printf("Ethernet 대상 MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
-           eth_header->ether_dhost[0], eth_header->ether_dhost[1],
-           eth_header->ether_dhost[2], eth_header->ether_dhost[3],
-           eth_header->ether_dhost[4], eth_header->ether_dhost[5]);
+    // SSL/TLS 데이터로부터 SSL/TLS 세션 생성
+    SSL_CTX *ssl_ctx = SSL_CTX_new(TLS_client_method());
+    SSL *ssl = SSL_new(ssl_ctx);
 
-    // 소스 및 대상 IP 주소 출력
-    printf("Source IP: %s\n", inet_ntoa(ip_header->ip_src));
-    printf("Destination IP: %s\n", inet_ntoa(ip_header->ip_dst));
+    // SSL/TLS 데이터를 읽고 해석
+    SSL_set_fd(ssl, fileno(stdout)); // 출력을 표준 출력으로 설정 (또는 원하는 파일 디스크립터로 설정)
+    SSL_write(ssl, ssl_data, pkthdr->len - (ETHER_HDR_LEN + (ip_header->ip_hl << 2) + (tcp_header->th_off << 2)));
+    SSL_read(ssl, ssl_data, pkthdr->len - (ETHER_HDR_LEN + (ip_header->ip_hl << 2) + (tcp_header->th_off << 2)));
 
-    // 소스 및 대상 포트 출력
-    printf("Source Port: %d\n", ntohs(tcp_header->th_sport));
-    printf("Destination Port: %d\n", ntohs(tcp_header->th_dport));
-
-    // 메시지 데이터 출력
-    printf("Message: ");
-    for (int i = 0; i < pkthdr->len - (ETHER_HDR_LEN + (ip_header->ip_hl << 2) + (tcp_header->th_off << 2)); i++) {
-        printf("%c", data[i]);
+    // SSL/TLS 데이터 출력 (디코딩 성공한 경우)
+    if (SSL_get_error(ssl, 0) == SSL_ERROR_NONE) {
+        printf("Decrypted Message: %s\n", ssl_data);
+    } else {
+        // SSL/TLS 디코딩에 실패한 경우 바이트 데이터 출력
+        printf("Message (Byte Data): ");
+        for (int i = 0; i < pkthdr->len - (ETHER_HDR_LEN + (ip_header->ip_hl << 2) + (tcp_header->th_off << 2)); i++) {
+            printf("%02X ", ssl_data[i]);
+        }
+        printf("\n");
     }
-    printf("\n");
+
+    SSL_free(ssl);
+    SSL_CTX_free(ssl_ctx);
 
     printf("\n");
 }
